@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 "${FIREFOX_SESSIONS_LIBEXEC:-$HOME/.local/lib/firefox-sessions}/firefox_sessions.py" "$@"

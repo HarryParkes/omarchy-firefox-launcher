@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.harryparkes.firefox-sessions",
+  "name": "Firefox Sessions",
+  "version": "1.0.0",
+  "author": "Harry Parkes",
+  "license": "MIT",
+  "repository": "https://github.com/HarryParkes/omarchy-firefox-launcher",
+  "description": "Launch and manage isolated Firefox sessions across Hyprland workspaces.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Firefox Sessions",
+    "description": "Manage isolated Firefox sessions.",
+    "category": "Applications",
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {},
+    "schema": []
+  }
+}
