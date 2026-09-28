@@ -1,0 +1,1 @@
+# omarchy-firefox-launcher
