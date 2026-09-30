@@ -9,9 +9,7 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -34,10 +32,8 @@ CONFIG_ROOT = xdg_path("XDG_CONFIG_HOME", ".config") / APP
 DATA_ROOT = xdg_path("XDG_DATA_HOME", ".local/share") / APP
 RUNTIME_ROOT = Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/{APP}-{os.getuid()}")) / APP
 CONFIG_FILE = CONFIG_ROOT / "config.json"
-SCHEDULE_FILE = CONFIG_ROOT / "schedules.json"
 STATE_FILE = RUNTIME_ROOT / "state.json"
 LOCK_FILE = RUNTIME_ROOT / "manager.lock"
-SYSTEMD_ROOT = CONFIG_ROOT.parent / "systemd" / "user"
 
 
 class UserError(Exception):
@@ -480,146 +476,6 @@ def next_session(_args):
     print(f"Focused {target.get('initialClass') or target.get('class')}")
 
 
-def parse_schedule_time(value):
-    try:
-        scheduled = datetime.fromisoformat(value.strip())
-    except ValueError as error:
-        raise UserError("time must use YYYY-MM-DD HH:MM or an ISO 8601 value") from error
-    scheduled = scheduled.astimezone()
-    if scheduled <= datetime.now().astimezone():
-        raise UserError("scheduled time must be in the future")
-    return scheduled.replace(microsecond=0)
-
-
-def schedules():
-    value = read_json(SCHEDULE_FILE, {"schedules": []}).get("schedules", [])
-    if not isinstance(value, list):
-        return []
-    return sorted((item for item in value if isinstance(item, dict)), key=lambda item: item.get("at", ""))
-
-
-def save_schedules(value):
-    atomic_json(SCHEDULE_FILE, {"schedules": value})
-
-
-def unit_escape(value):
-    return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def systemctl(*arguments, check=True):
-    if not shutil.which("systemctl"):
-        raise UserError("systemctl is required for scheduling")
-    try:
-        return subprocess.run(
-            ["systemctl", "--user", *arguments], text=True, capture_output=True, check=check, timeout=10
-        )
-    except subprocess.CalledProcessError as error:
-        message = error.stderr.strip() or error.stdout.strip() or "systemctl failed"
-        raise UserError(message) from error
-
-
-def schedule_paths(unit):
-    return SYSTEMD_ROOT / f"{unit}.timer", SYSTEMD_ROOT / f"{unit}.service"
-
-
-def remove_schedule(schedule_id, disable):
-    if not re.fullmatch(r"[0-9a-f]{12}", schedule_id):
-        raise UserError(f"invalid schedule id: {schedule_id}")
-    records = schedules()
-    record = next((item for item in records if item.get("id") == schedule_id), None)
-    if not record:
-        raise UserError(f"unknown schedule: {schedule_id}")
-    timer, service = schedule_paths(f"firefox-sessions-{schedule_id}")
-    if disable:
-        systemctl("disable", "--now", timer.name, check=False)
-    timer.unlink(missing_ok=True)
-    service.unlink(missing_ok=True)
-    save_schedules([item for item in records if item.get("id") != schedule_id])
-    systemctl("daemon-reload")
-
-
-def schedule_add(args):
-    scheduled = parse_schedule_time(args.at)
-    schedule_id = uuid.uuid4().hex[:12]
-    unit = f"firefox-sessions-{schedule_id}"
-    record = {
-        "id": schedule_id,
-        "at": scheduled.isoformat(timespec="seconds"),
-        "action": args.action,
-        "unit": unit,
-    }
-    timer, service = schedule_paths(unit)
-    SYSTEMD_ROOT.mkdir(parents=True, exist_ok=True)
-    command = f'"{unit_escape(sys.executable)}" "{unit_escape(str(Path(__file__).resolve()))}" _scheduled {schedule_id}'
-    service.write_text(
-        "[Unit]\n"
-        f"Description=Firefox Sessions one-off {args.action}\n\n"
-        "[Service]\n"
-        "Type=oneshot\n"
-        "KillMode=process\n"
-        f"ExecStart={command}\n"
-    )
-    timer.write_text(
-        "[Unit]\n"
-        f"Description=Firefox Sessions at {scheduled.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        "[Timer]\n"
-        f"OnCalendar={scheduled.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        "Persistent=true\n"
-        "AccuracySec=1s\n"
-        f"Unit={service.name}\n\n"
-        "[Install]\n"
-        "WantedBy=timers.target\n"
-    )
-    with locked():
-        save_schedules(schedules() + [record])
-    try:
-        systemctl("daemon-reload")
-        systemctl("enable", "--now", timer.name)
-    except UserError:
-        timer.unlink(missing_ok=True)
-        service.unlink(missing_ok=True)
-        with locked():
-            save_schedules([item for item in schedules() if item.get("id") != schedule_id])
-        raise
-    print_value(record if args.json else f"Scheduled {args.action} for {record['at']} ({schedule_id})", args.json)
-
-
-def schedule_list(args):
-    value = schedules()
-    if args.json:
-        print(json.dumps(value))
-        return
-    if not value:
-        print("No scheduled actions")
-        return
-    for record in value:
-        print(f"{record['id']}  {record['at']}  {record['action']}")
-
-
-def schedule_cancel(args):
-    with locked():
-        remove_schedule(args.schedule_id, True)
-    print(f"Cancelled {args.schedule_id}")
-
-
-def scheduled_action(args):
-    record = next((item for item in schedules() if item.get("id") == args.schedule_id), None)
-    if not record:
-        raise UserError(f"unknown schedule: {args.schedule_id}")
-    try:
-        if record["action"] == "stop":
-            stop(argparse.Namespace())
-        else:
-            action_args = argparse.Namespace(count=None, url=None, workspaces=None, stagger_ms=150, json=False)
-            if record["action"] == "relaunch":
-                relaunch(action_args)
-            else:
-                launch(action_args)
-    finally:
-        with locked():
-            remove_schedule(args.schedule_id, True)
-
-
 def status(args):
     with locked():
         value = status_value(load_config(), live_state())
@@ -656,22 +512,6 @@ def parser():
     reset_parser.set_defaults(handler=reset)
     commands.add_parser("focus").set_defaults(handler=focus)
     commands.add_parser("next").set_defaults(handler=next_session)
-    schedule_parser = commands.add_parser("schedule")
-    schedule_commands = schedule_parser.add_subparsers(dest="schedule_command", required=True)
-    schedule_add_parser = schedule_commands.add_parser("add")
-    schedule_add_parser.add_argument("--at", required=True)
-    schedule_add_parser.add_argument("--action", choices=["launch", "stop", "relaunch"], default="launch")
-    schedule_add_parser.add_argument("--json", action="store_true")
-    schedule_add_parser.set_defaults(handler=schedule_add)
-    schedule_list_parser = schedule_commands.add_parser("list")
-    schedule_list_parser.add_argument("--json", action="store_true")
-    schedule_list_parser.set_defaults(handler=schedule_list)
-    schedule_cancel_parser = schedule_commands.add_parser("cancel")
-    schedule_cancel_parser.add_argument("schedule_id")
-    schedule_cancel_parser.set_defaults(handler=schedule_cancel)
-    scheduled_parser = commands.add_parser("_scheduled", help=argparse.SUPPRESS)
-    scheduled_parser.add_argument("schedule_id")
-    scheduled_parser.set_defaults(handler=scheduled_action)
     place_parser = commands.add_parser("_place", help=argparse.SUPPRESS)
     place_parser.add_argument("assignments")
     place_parser.set_defaults(handler=place)

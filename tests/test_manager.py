@@ -6,7 +6,6 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -193,6 +192,11 @@ class ManagerTest(unittest.TestCase):
         self.assertNotEqual(bad_count.returncode, 0)
         self.assertNotEqual(bad_url.returncode, 0)
 
+    def test_help_does_not_offer_scheduling(self):
+        result = self.run_cli("--help")
+
+        self.assertNotIn("schedule", result.stdout)
+
     def test_focus_cycles_through_normal_and_special_workspaces(self):
         calls = self.root / "hyprctl-calls"
         hyprctl = self.bin / "hyprctl"
@@ -243,93 +247,6 @@ class ManagerTest(unittest.TestCase):
                 'eval hl.dispatch(hl.dsp.window.move({ x = 10, y = 36, relative = false, window = "address:0x2" }))',
             ],
         )
-
-    def install_fake_systemctl(self):
-        calls = self.root / "systemctl-calls"
-        systemctl = self.bin / "systemctl"
-        systemctl.write_text(
-            "#!/bin/sh\n"
-            f"printf '%s\\n' \"$*\" >> '{calls}'\n"
-        )
-        systemctl.chmod(0o755)
-        return calls
-
-    def add_schedule(self, action="launch"):
-        at = (datetime.now().astimezone() + timedelta(days=2)).replace(microsecond=0)
-        result = self.run_cli(
-            "schedule",
-            "add",
-            "--at",
-            at.strftime("%Y-%m-%d %H:%M:%S"),
-            "--action",
-            action,
-            "--json",
-        )
-        return at, json.loads(result.stdout)
-
-    def test_one_off_schedule_can_be_listed_and_cancelled(self):
-        calls = self.install_fake_systemctl()
-
-        at, created = self.add_schedule("relaunch")
-        listed = json.loads(self.run_cli("schedule", "list", "--json").stdout)
-
-        self.assertEqual(listed, [created])
-        self.assertEqual(created["action"], "relaunch")
-        timer = self.home / ".config" / "systemd" / "user" / f"{created['unit']}.timer"
-        service = timer.with_suffix(".service")
-        self.assertIn(f"OnCalendar={at.strftime('%Y-%m-%d %H:%M:%S')}", timer.read_text())
-        self.assertIn("Persistent=true", timer.read_text())
-        self.assertIn(f"_scheduled {created['id']}", service.read_text())
-        self.assertIn("KillMode=process", service.read_text())
-
-        self.run_cli("schedule", "cancel", created["id"])
-
-        self.assertFalse(timer.exists())
-        self.assertFalse(service.exists())
-        self.assertEqual(json.loads(self.run_cli("schedule", "list", "--json").stdout), [])
-        self.assertIn(f"--user enable --now {created['unit']}.timer", calls.read_text())
-        self.assertIn(f"--user disable --now {created['unit']}.timer", calls.read_text())
-
-    def test_schedule_rejects_a_past_time(self):
-        self.install_fake_systemctl()
-        past = (datetime.now().astimezone() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
-
-        result = self.run_cli("schedule", "add", "--at", past, "--action", "launch", check=False)
-
-        self.assertNotEqual(result.returncode, 0)
-
-    def test_schedule_rolls_back_when_timer_activation_fails(self):
-        systemctl = self.bin / "systemctl"
-        systemctl.write_text(
-            "#!/bin/sh\n"
-            "case \"$*\" in *'enable --now'*) printf 'activation failed\\n' >&2; exit 1 ;; esac\n"
-        )
-        systemctl.chmod(0o755)
-        at = (datetime.now().astimezone() + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
-
-        result = self.run_cli(
-            "schedule", "add", "--at", at, "--action", "launch", check=False
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(json.loads(self.run_cli("schedule", "list", "--json").stdout), [])
-        unit_root = self.home / ".config" / "systemd" / "user"
-        self.assertEqual(list(unit_root.glob("firefox-sessions-*")), [])
-
-    def test_executed_schedule_runs_once_and_removes_itself(self):
-        calls = self.install_fake_systemctl()
-        self.run_cli("configure", "--count", "1")
-        _, created = self.add_schedule("launch")
-
-        self.run_cli("_scheduled", created["id"])
-
-        self.assertEqual(self.status()["running"], 1)
-        self.assertEqual(json.loads(self.run_cli("schedule", "list", "--json").stdout), [])
-        unit_root = self.home / ".config" / "systemd" / "user"
-        self.assertFalse((unit_root / f"{created['unit']}.timer").exists())
-        self.assertFalse((unit_root / f"{created['unit']}.service").exists())
-        self.assertIn(f"--user disable --now {created['unit']}.timer", calls.read_text())
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -64,8 +64,7 @@ Select the Firefox glyph in the Omarchy bar. The panel provides:
 - Launch Sessions and Launch Missing;
 - Stop All, Relaunch, and confirmed Reset Profiles;
 - Open Workspace and Next Session;
-- running count and launch progress;
-- one-off Launch, Stop All, and Relaunch schedules.
+- running count and launch progress.
 
 Launch Sessions and Launch Missing are both safe ensure operations. They start only missing session numbers. Relaunch stops all managed sessions and starts the configured set again.
 
@@ -80,22 +79,6 @@ firefox-sessions stop
 firefox-sessions relaunch
 firefox-sessions reset --yes
 ```
-
-## One-off schedules
-
-Create one-time actions with a local date and time:
-
-```bash
-firefox-sessions schedule add --at "2026-10-02 09:00" --action launch
-firefox-sessions schedule add --at "2026-10-02 18:00" --action stop
-firefox-sessions schedule add --at "2026-10-03 08:30" --action relaunch
-firefox-sessions schedule list
-firefox-sessions schedule cancel <id>
-```
-
-The panel provides the same actions, shows pending schedules, and lets you cancel each one. Times use the machine's local timezone. Past times are rejected.
-
-Each schedule is a persistent systemd user timer under `~/.config/systemd/user`. If the machine is off at the selected time, systemd runs the action once after the next login. The timer, service, and schedule record remove themselves after the action runs. Uninstall also disables and removes all pending Firefox Sessions timers.
 
 ## Multiple workspaces
 
@@ -117,10 +100,8 @@ XDG locations are used when their environment variables are set:
 
 ```text
 $XDG_CONFIG_HOME/firefox-sessions/config.json
-$XDG_CONFIG_HOME/firefox-sessions/schedules.json
 $XDG_DATA_HOME/firefox-sessions/profile-XX
 $XDG_RUNTIME_DIR/firefox-sessions/state.json
-$XDG_CONFIG_HOME/systemd/user/firefox-sessions-*.{timer,service}
 ```
 
 Defaults are `~/.config`, `~/.local/share`, and the current user runtime directory. Every profile has independent cookies, storage, cache, preferences, extensions, and browser state.

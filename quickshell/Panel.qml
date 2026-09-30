@@ -17,7 +17,6 @@ Panel {
   property bool busy: false
   property string progressText: "Ready"
   property string errorText: ""
-  property var scheduledActions: []
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
@@ -28,7 +27,6 @@ Panel {
 
   function refresh() {
     if (!statusProcess.running) statusProcess.exec(["firefox-sessions", "status", "--json"])
-    if (!scheduleListProcess.running) scheduleListProcess.exec(["firefox-sessions", "schedule", "list", "--json"])
   }
 
   function applyStatus(text) {
@@ -78,33 +76,7 @@ Panel {
     saveConfiguration()
   }
 
-  function suggestedTime() {
-    var value = new Date(Date.now() + 3600000)
-    function pad(number) { return String(number).padStart(2, "0") }
-    return value.getFullYear() + "-" + pad(value.getMonth() + 1) + "-" + pad(value.getDate())
-      + " " + pad(value.getHours()) + ":" + pad(value.getMinutes())
-  }
-
-  function addSchedule() {
-    if (scheduleProcess.running) return
-    errorText = ""
-    scheduleProcess.exec([
-      "firefox-sessions", "schedule", "add",
-      "--at", scheduleField.text,
-      "--action", scheduleActionGroup.value,
-      "--json"
-    ])
-  }
-
-  function cancelSchedule(scheduleId) {
-    if (!scheduleProcess.running)
-      scheduleProcess.exec(["firefox-sessions", "schedule", "cancel", scheduleId])
-  }
-
-  onOpenedChanged: if (opened) {
-    if (scheduleField.text === "") scheduleField.text = suggestedTime()
-    refresh()
-  }
+  onOpenedChanged: if (opened) refresh()
 
   Timer {
     interval: 2000
@@ -127,32 +99,6 @@ Panel {
     }
     onExited: function(code) {
       if (code === 0) root.refresh()
-    }
-  }
-
-  Process {
-    id: scheduleListProcess
-    stdout: StdioCollector {
-      onStreamFinished: {
-        try {
-          root.scheduledActions = JSON.parse(text)
-        } catch (error) {
-          root.errorText = "Could not read scheduled actions"
-        }
-      }
-    }
-  }
-
-  Process {
-    id: scheduleProcess
-    stderr: StdioCollector {
-      onStreamFinished: if (text.trim() !== "") root.errorText = text.trim()
-    }
-    onExited: function(code) {
-      if (code === 0) {
-        scheduleField.text = root.suggestedTime()
-        root.refresh()
-      }
     }
   }
 
@@ -283,7 +229,7 @@ Panel {
 
           FormField {
             width: parent.width
-            label: "Workspaces · assigned round-robin"
+            label: "Workspaces · 16 sessions each"
             TextField {
               id: workspaceField
               width: parent.width
@@ -295,99 +241,6 @@ Panel {
           }
 
           PanelSeparator { foreground: root.foreground }
-
-          FormField {
-            width: parent.width
-            label: "One-off schedule · local time"
-            Column {
-              width: parent.width
-              spacing: Style.spacing.sm
-
-              TextField {
-                id: scheduleField
-                width: parent.width
-                foreground: root.foreground
-                placeholderText: "YYYY-MM-DD HH:MM"
-              }
-
-              ButtonGroup {
-                id: scheduleActionGroup
-                value: "launch"
-                options: [
-                  { value: "launch", label: "Launch" },
-                  { value: "stop", label: "Stop All" },
-                  { value: "relaunch", label: "Relaunch" }
-                ]
-                foreground: root.foreground
-                onChanged: function(value) { scheduleActionGroup.value = value }
-              }
-
-              Button {
-                width: parent.width
-                text: "Schedule Once"
-                iconText: "󰃰"
-                bordered: true
-                foreground: root.foreground
-                onClicked: root.addSchedule()
-              }
-            }
-          }
-
-          Column {
-            visible: root.scheduledActions.length > 0
-            width: parent.width
-            spacing: Style.spacing.sm
-
-            PanelSectionHeader {
-              text: "SCHEDULED"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Repeater {
-              model: root.scheduledActions
-
-              Item {
-                required property var modelData
-                width: contentColumn.width
-                implicitHeight: scheduleRow.implicitHeight
-
-                Row {
-                  id: scheduleRow
-                  width: parent.width
-                  spacing: Style.spacing.sm
-
-                  Column {
-                    width: parent.width - cancelButton.width - parent.spacing
-
-                    Text {
-                      width: parent.width
-                      text: modelData.action.charAt(0).toUpperCase() + modelData.action.slice(1)
-                      color: root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.body
-                    }
-
-                    Text {
-                      width: parent.width
-                      text: modelData.at.replace("T", " ")
-                      color: root.dim
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.bodySmall
-                    }
-                  }
-
-                  Button {
-                    id: cancelButton
-                    text: "Cancel"
-                    bordered: true
-                    foreground: root.foreground
-                    onClicked: root.cancelSchedule(modelData.id)
-                  }
-                }
-              }
-            }
-          }
 
           Column {
             width: parent.width

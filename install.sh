@@ -22,6 +22,20 @@ if [ -e "$PLUGIN_DIR" ] || [ -L "$PLUGIN_DIR" ]; then
 fi
 
 mkdir -p "$PLUGIN_DIR" "$LIBEXEC_DIR" "$BIN_DIR" "$XDG_CONFIG_HOME/firefox-sessions" "$XDG_DATA_HOME/firefox-sessions"
+
+SYSTEMD_USER_DIR="$XDG_CONFIG_HOME/systemd/user"
+if command -v systemctl >/dev/null 2>&1; then
+  for timer in "$SYSTEMD_USER_DIR"/firefox-sessions-*.timer; do
+    [ -e "$timer" ] || continue
+    systemctl --user disable --now "$(basename "$timer")" >/dev/null 2>&1 || true
+  done
+fi
+rm -f "$SYSTEMD_USER_DIR"/firefox-sessions-*.timer "$SYSTEMD_USER_DIR"/firefox-sessions-*.service
+rm -f "$XDG_CONFIG_HOME/firefox-sessions/schedules.json"
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+fi
+
 cp "$ROOT/quickshell/manifest.json" "$ROOT/quickshell/Panel.qml" "$PLUGIN_DIR/"
 install -m 755 "$ROOT/scripts/firefox_sessions.py" "$LIBEXEC_DIR/firefox_sessions.py"
 install -m 755 "$ROOT/scripts/firefox-sessions" "$BIN_DIR/firefox-sessions"
