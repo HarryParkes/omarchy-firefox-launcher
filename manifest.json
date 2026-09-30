@@ -11,7 +11,7 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "quickshell/Panel.qml"
   },
   "barWidget": {
     "displayName": "Firefox Sessions",

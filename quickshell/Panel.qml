@@ -22,11 +22,13 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
+  readonly property var managerCommand: ["python3", decodeURIComponent(Qt.resolvedUrl("../scripts/firefox_sessions.py").toString().replace(/^file:\/\//, ""))]
+
   implicitWidth: barButton.implicitWidth
   implicitHeight: barButton.implicitHeight
 
   function refresh() {
-    if (!statusProcess.running) statusProcess.exec(["firefox-sessions", "status", "--json"])
+    if (!statusProcess.running) statusProcess.exec(managerCommand.concat(["status", "--json"]))
   }
 
   function applyStatus(text) {
@@ -55,7 +57,7 @@ Panel {
   function saveConfiguration() {
     if (configProcess.running || busy) return
     errorText = ""
-    configProcess.exec(["firefox-sessions", "configure"].concat(configurationArgs()))
+    configProcess.exec(managerCommand.concat(["configure"]).concat(configurationArgs()))
   }
 
   function runAction(command) {
@@ -63,7 +65,7 @@ Panel {
     errorText = ""
     busy = true
     progressText = command === "stop" ? "Stopping managed sessions" : "Starting"
-    var arguments = ["firefox-sessions", command]
+    var arguments = managerCommand.concat([command])
     if (command === "launch" || command === "relaunch")
       arguments = arguments.concat(configurationArgs()).concat(["--json"])
     else if (command === "reset")
@@ -330,7 +332,7 @@ Panel {
               iconText: "󰍹"
               bordered: true
               foreground: root.foreground
-              onClicked: Quickshell.execDetached(["firefox-sessions", "focus"])
+              onClicked: Quickshell.execDetached(root.managerCommand.concat(["focus"]))
             }
             Button {
               width: (contentColumn.width - parent.spacing) / 2
@@ -338,7 +340,7 @@ Panel {
               iconText: "󰒭"
               bordered: true
               foreground: root.foreground
-              onClicked: Quickshell.execDetached(["firefox-sessions", "next"])
+              onClicked: Quickshell.execDetached(root.managerCommand.concat(["next"]))
             }
           }
 

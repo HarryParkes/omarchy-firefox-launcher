@@ -1,0 +1,25 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Test
+        run: python3 -m unittest discover -s tests -v
+      - name: Check shell syntax
+        run: sh -n install.sh uninstall.sh scripts/firefox-sessions
+      - name: Validate plugin
+        run: |
+          curl --fail --silent --show-error --location https://raw.githubusercontent.com/omacom/omarchy/8b4eae66da2938ba9559f103b18dbf85cdf28a70/bin/omarchy-plugin-validate -o "$RUNNER_TEMP/omarchy-plugin-validate"
+          bash "$RUNNER_TEMP/omarchy-plugin-validate" "$GITHUB_WORKSPACE"

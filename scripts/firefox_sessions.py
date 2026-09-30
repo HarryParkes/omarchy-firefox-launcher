@@ -353,18 +353,23 @@ def relaunch(args):
 def reset(args):
     if not args.yes:
         raise UserError("reset requires --yes")
-    data_home = xdg_path("XDG_DATA_HOME", ".local/share").resolve(strict=False)
-    expected = data_home / APP
-    if DATA_ROOT.is_symlink():
-        raise UserError("refusing to reset a linked profile path")
-    actual = DATA_ROOT.resolve(strict=False)
-    if actual != expected or actual == Path.home().resolve() or actual == Path("/"):
-        raise UserError("refusing to reset an unexpected profile path")
+    roots = [(DATA_ROOT, xdg_path("XDG_DATA_HOME", ".local/share"))]
+    if args.configuration:
+        roots.append((CONFIG_ROOT, xdg_path("XDG_CONFIG_HOME", ".config")))
+    paths = []
+    for root, parent in roots:
+        actual = root.resolve(strict=False)
+        if root.is_symlink():
+            raise UserError("refusing to reset a linked application path")
+        if actual != parent.resolve(strict=False) / APP or actual in {Path.home().resolve(), Path("/")}:
+            raise UserError("refusing to reset an unexpected application path")
+        paths.append(actual)
     with locked():
         stop_managed()
-        if actual.exists():
-            shutil.rmtree(actual)
-    print(f"Removed profiles from {actual}")
+        for path in paths:
+            if path.exists():
+                shutil.rmtree(path)
+    print("Removed " + ", ".join(str(path) for path in paths))
 
 
 def hyprctl(*arguments, check=False):
@@ -509,6 +514,7 @@ def parser():
     commands.add_parser("stop").set_defaults(handler=stop)
     reset_parser = commands.add_parser("reset")
     reset_parser.add_argument("--yes", action="store_true")
+    reset_parser.add_argument("--configuration", action="store_true", help="also delete saved configuration")
     reset_parser.set_defaults(handler=reset)
     commands.add_parser("focus").set_defaults(handler=focus)
     commands.add_parser("next").set_defaults(handler=next_session)
