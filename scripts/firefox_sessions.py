@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 
 APP = "firefox-sessions"
+SESSIONS_PER_WORKSPACE = 16
 DEFAULT_CONFIG = {
     "count": 48,
     "url": "about:blank",
@@ -90,6 +91,49 @@ def validate_workspaces(value):
     if not items or any(not pattern.fullmatch(item) for item in items):
         raise UserError("workspaces must be comma-separated names, numbers, or special:name values")
     return items
+
+
+def workspace_targets(workspaces, count):
+    required = (count + SESSIONS_PER_WORKSPACE - 1) // SESSIONS_PER_WORKSPACE
+    targets = list(workspaces[:required])
+    if len(targets) >= required:
+        return targets
+    base = targets[-1]
+    while len(targets) < required:
+        if base.isdigit():
+            targets.append(str(int(base) + len(targets) - len(workspaces) + 1))
+        else:
+            targets.append(f"{base}-{len(targets) - len(workspaces) + 2}")
+    return targets
+
+
+def workspace_for_session(index, targets):
+    return targets[(index - 1) // SESSIONS_PER_WORKSPACE]
+
+
+def grid_cells(monitor, count):
+    columns = min(4, count)
+    rows = (count + columns - 1) // columns
+    scale = float(monitor.get("scale", 1)) or 1
+    width = round(monitor["width"] / scale)
+    height = round(monitor["height"] / scale)
+    left, top, right, bottom = monitor.get("reserved", [0, 0, 0, 0])
+    outer = 10
+    inner = 5
+    cell_width = (width - left - right - 2 * outer - inner * (columns - 1)) // columns
+    cell_height = (height - top - bottom - 2 * outer - inner * (rows - 1)) // rows
+    origin_x = monitor.get("x", 0) + left + outer
+    origin_y = monitor.get("y", 0) + top + outer
+    return [
+        (
+            origin_x + column * (cell_width + inner),
+            origin_y + row * (cell_height + inner),
+            cell_width,
+            cell_height,
+        )
+        for row in range(rows)
+        for column in range(columns)
+    ][:count]
 
 
 def load_config():
@@ -203,8 +247,9 @@ def launch(args):
         binary = firefox_binary()
         missing = [index for index in range(1, config["count"] + 1) if str(index) not in state["sessions"]]
         launched = 0
+        targets = workspace_targets(config["workspaces"], config["count"])
         assignments = {
-            record["class"]: config["workspaces"][(int(index) - 1) % len(config["workspaces"])]
+            record["class"]: workspace_for_session(int(index), targets)
             for index, record in state["sessions"].items()
             if int(index) <= config["count"] and record.get("class")
         }
@@ -243,7 +288,7 @@ def launch(args):
                 "profile": str(profile.resolve()),
                 "class": identity,
             }
-            assignments[identity] = config["workspaces"][(index - 1) % len(config["workspaces"])]
+            assignments[identity] = workspace_for_session(index, targets)
             atomic_json(STATE_FILE, state)
             launched += 1
             print_value(
@@ -326,13 +371,23 @@ def reset(args):
     print(f"Removed profiles from {actual}")
 
 
-def hyprctl(*arguments):
+def hyprctl(*arguments, check=False):
     try:
         return subprocess.run(
             ["hyprctl", *arguments], text=True, capture_output=True, check=True, timeout=3
         ).stdout
-    except (FileNotFoundError, subprocess.SubprocessError):
+    except subprocess.CalledProcessError as error:
+        if check:
+            raise UserError(error.stderr.strip() or error.stdout.strip() or "hyprctl failed") from error
         return ""
+    except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        if check:
+            raise UserError("hyprctl is unavailable") from error
+        return ""
+
+
+def dispatch(expression):
+    return hyprctl("eval", f"hl.dispatch({expression})", check=True)
 
 
 def clients():
@@ -343,9 +398,34 @@ def clients():
         return []
 
 
+def monitors():
+    try:
+        value = json.loads(hyprctl("monitors", "-j"))
+        return value if isinstance(value, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+def arrange(placed):
+    available = {monitor.get("id"): monitor for monitor in monitors()}
+    for windows in placed.values():
+        windows.sort(key=lambda client: client.get("initialClass") or client.get("class", ""))
+        monitor = available.get(windows[0].get("monitor")) if windows else None
+        if not monitor:
+            continue
+        for client, (x, y, width, height) in zip(windows, grid_cells(monitor, len(windows))):
+            address = f"address:{client['address']}"
+            dispatch(f'hl.dsp.window.float({{ action = "enable", window = "{address}" }})')
+            dispatch(
+                f'hl.dsp.window.resize({{ x = {width}, y = {height}, relative = false, window = "{address}" }})'
+            )
+            dispatch(f'hl.dsp.window.move({{ x = {x}, y = {y}, relative = false, window = "{address}" }})')
+
+
 def place(args):
     assignments = json.loads(args.assignments)
     pending = dict(assignments)
+    placed = {target: [] for target in set(assignments.values())}
     deadline = time.monotonic() + 30
     while pending and time.monotonic() < deadline:
         for client in clients():
@@ -353,22 +433,28 @@ def place(args):
             if identity not in pending or not client.get("address"):
                 continue
             target = pending.pop(identity)
-            hyprctl("dispatch", "movetoworkspacesilent", f"{target},address:{client['address']}")
+            dispatch(
+                f'hl.dsp.window.move({{ workspace = {json.dumps(target)}, follow = false, '
+                f'window = "address:{client["address"]}" }})'
+            )
+            placed[target].append(client)
         if pending:
             time.sleep(0.25)
+    arrange(placed)
 
 
 def focus(_args):
     with locked():
         config = load_config()
         state = live_state()
-        state["workspace_index"] = (state.get("workspace_index", -1) + 1) % len(config["workspaces"])
-        target = config["workspaces"][state["workspace_index"]]
+        targets = workspace_targets(config["workspaces"], config["count"])
+        state["workspace_index"] = (state.get("workspace_index", -1) + 1) % len(targets)
+        target = targets[state["workspace_index"]]
         atomic_json(STATE_FILE, state)
     if target.startswith("special:"):
-        hyprctl("dispatch", "togglespecialworkspace", target.removeprefix("special:"))
+        dispatch(f"hl.dsp.workspace.toggle_special({json.dumps(target.removeprefix('special:'))})")
     else:
-        hyprctl("dispatch", "workspace", target)
+        dispatch(f"hl.dsp.focus({{ workspace = {json.dumps(target)} }})")
     print(f"Opened workspace {target}")
 
 
@@ -390,7 +476,7 @@ def next_session(_args):
         active = None
     current = next((index for index, client in enumerate(managed) if client["address"] == active), -1)
     target = managed[(current + 1) % len(managed)]
-    hyprctl("dispatch", "focuswindow", f"address:{target['address']}")
+    dispatch(f'hl.dsp.focus({{ window = "address:{target["address"]}" }})')
     print(f"Focused {target.get('initialClass') or target.get('class')}")
 
 

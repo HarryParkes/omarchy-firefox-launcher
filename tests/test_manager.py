@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import os
 import subprocess
 import sys
@@ -11,6 +12,43 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANAGER = ROOT / "scripts" / "firefox_sessions.py"
+SPEC = importlib.util.spec_from_file_location("firefox_sessions", MANAGER)
+firefox_sessions = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(firefox_sessions)
+
+
+class LayoutTest(unittest.TestCase):
+    def test_single_workspace_expands_to_hold_sixteen_sessions_each(self):
+        self.assertEqual(
+            firefox_sessions.workspace_targets(["special:firefox-sessions"], 48),
+            ["special:firefox-sessions", "special:firefox-sessions-2", "special:firefox-sessions-3"],
+        )
+        self.assertEqual(firefox_sessions.workspace_targets(["3"], 48), ["3", "4", "5"])
+
+    def test_sessions_are_assigned_in_groups_of_sixteen(self):
+        targets = ["3", "4", "5"]
+        self.assertEqual(firefox_sessions.workspace_for_session(1, targets), "3")
+        self.assertEqual(firefox_sessions.workspace_for_session(16, targets), "3")
+        self.assertEqual(firefox_sessions.workspace_for_session(17, targets), "4")
+        self.assertEqual(firefox_sessions.workspace_for_session(48, targets), "5")
+
+    def test_sixteen_windows_fill_an_equal_four_by_four_grid(self):
+        monitor = {
+            "x": 0,
+            "y": 0,
+            "width": 3840,
+            "height": 2160,
+            "scale": 1.6,
+            "reserved": [0, 26, 0, 0],
+        }
+
+        cells = firefox_sessions.grid_cells(monitor, 16)
+
+        self.assertEqual(len(cells), 16)
+        self.assertEqual(len({width for _, _, width, _ in cells}), 1)
+        self.assertEqual(len({height for _, _, _, height in cells}), 1)
+        self.assertEqual(len({x for x, _, _, _ in cells}), 4)
+        self.assertEqual(len({y for _, y, _, _ in cells}), 4)
 
 
 class ManagerTest(unittest.TestCase):
@@ -173,9 +211,9 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(
             calls.read_text().splitlines(),
             [
-                "dispatch workspace 4",
-                "dispatch workspace 5",
-                "dispatch togglespecialworkspace research",
+                'eval hl.dispatch(hl.dsp.focus({ workspace = "4" }))',
+                'eval hl.dispatch(hl.dsp.focus({ workspace = "5" }))',
+                'eval hl.dispatch(hl.dsp.workspace.toggle_special("research"))',
             ],
         )
 
@@ -185,7 +223,9 @@ class ManagerTest(unittest.TestCase):
         hyprctl.write_text(
             "#!/bin/sh\n"
             "if [ \"$*\" = 'clients -j' ]; then\n"
-            "  printf '%s\\n' '[{\"address\":\"0x1\",\"initialClass\":\"firefox\"},{\"address\":\"0x2\",\"initialClass\":\"firefox-sessions-01\"}]'\n"
+            "  printf '%s\\n' '[{\"address\":\"0x1\",\"initialClass\":\"firefox\",\"monitor\":0},{\"address\":\"0x2\",\"initialClass\":\"firefox-sessions-01\",\"monitor\":0}]'\n"
+            "elif [ \"$*\" = 'monitors -j' ]; then\n"
+            "  printf '%s\\n' '[{\"id\":0,\"x\":0,\"y\":0,\"width\":3840,\"height\":2160,\"scale\":1.6,\"reserved\":[0,26,0,0]}]'\n"
             "else\n"
             f"  printf '%s\\n' \"$*\" >> '{calls}'\n"
             "fi\n"
@@ -196,7 +236,12 @@ class ManagerTest(unittest.TestCase):
 
         self.assertEqual(
             calls.read_text().splitlines(),
-            ["dispatch movetoworkspacesilent special:research,address:0x2"],
+            [
+                'eval hl.dispatch(hl.dsp.window.move({ workspace = "special:research", follow = false, window = "address:0x2" }))',
+                'eval hl.dispatch(hl.dsp.window.float({ action = "enable", window = "address:0x2" }))',
+                'eval hl.dispatch(hl.dsp.window.resize({ x = 2380, y = 1304, relative = false, window = "address:0x2" }))',
+                'eval hl.dispatch(hl.dsp.window.move({ x = 10, y = 36, relative = false, window = "address:0x2" }))',
+            ],
         )
 
     def install_fake_systemctl(self):

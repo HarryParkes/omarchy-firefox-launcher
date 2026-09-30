@@ -60,7 +60,7 @@ Select the Firefox glyph in the Omarchy bar. The panel provides:
 - persisted target URL;
 - 12, 24, and 48 presets, with 48 as the default;
 - a custom count from 1 to 999;
-- round-robin workspace configuration;
+- equal grids with up to 16 sessions per workspace;
 - Launch Sessions and Launch Missing;
 - Stop All, Relaunch, and confirmed Reset Profiles;
 - Open Workspace and Next Session;
@@ -107,9 +107,9 @@ firefox-sessions configure --workspaces "special:firefox-sessions"
 firefox-sessions configure --workspaces "special:research-a,special:research-b"
 ```
 
-Sessions are assigned round-robin. For example, 48 sessions across `4,5,6` place 16 sessions on each workspace. Open Workspace cycles through the configured list. Running Launch Sessions again also reapplies placement to existing managed windows.
+Sessions are assigned in groups of 16 and arranged in equal grids. For example, sessions 1–16 use workspace `4`, sessions 17–32 use `5`, and sessions 33–48 use `6`. If the configured list is too short, numeric workspaces continue in sequence and named workspaces get a numeric suffix. Open Workspace cycles through every used workspace. Running Launch Sessions again also reapplies placement to existing managed windows.
 
-The default is `special:firefox-sessions`. A normal workspace value can be a positive number or a Hyprland workspace name. A special workspace must use `special:name`.
+The default is `special:firefox-sessions`. With 48 sessions, overflow uses `special:firefox-sessions-2` and `special:firefox-sessions-3`. A normal workspace value can be a positive number or a Hyprland workspace name. A special workspace must use `special:name`.
 
 ## Configuration and state
 
