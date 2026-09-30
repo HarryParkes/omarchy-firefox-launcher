@@ -187,7 +187,7 @@ The tests use temporary user directories and test processes. They cover launch i
 
 Before each release, test real Firefox launch, workspace placement, panel controls, Escape, shell open and close, disable and enable, shell restart, update, and removal on Omarchy. Automated tests do not replace these desktop checks.
 
-Local checks on 30 September 2026 passed on Omarchy 4.0.4-1 and Hyprland 0.56.2: 17 tests on Python 3.10, shell syntax, both installed and pinned manifest validators, QML lint, panel rendering and configuration refresh, shell open and close, disable and enable, and two real Firefox instances with automatic workspace placement and equal sizing. The original user settings were restored after the preview capture. A fresh remote plugin install, Git-based plugin update, and shell restart still need release checks.
+Release checks on 30 September 2026 passed on Omarchy 4.0.4-1 and Hyprland 0.56.2: 17 tests on Python 3.10, shell syntax, both installed and pinned manifest validators, QML lint, panel rendering and configuration refresh, shell open and close, disable and enable, and two real Firefox instances with automatic workspace placement and equal sizing. Public GitHub installation, Git-based plugin update, removal of the old copied plugin, and shell restart also passed. User profiles and settings were kept. The original settings were restored after the preview capture. GitHub CI passed for the release preparation commit.
 
 ## Publication
 
