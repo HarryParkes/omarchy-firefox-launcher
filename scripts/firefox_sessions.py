@@ -556,6 +556,7 @@ def schedule_add(args):
         f"Description=Firefox Sessions one-off {args.action}\n\n"
         "[Service]\n"
         "Type=oneshot\n"
+        "KillMode=process\n"
         f"ExecStart={command}\n"
     )
     timer.write_text(
@@ -616,7 +617,7 @@ def scheduled_action(args):
                 launch(action_args)
     finally:
         with locked():
-            remove_schedule(args.schedule_id, False)
+            remove_schedule(args.schedule_id, True)
 
 
 def status(args):

@@ -263,8 +263,8 @@ Panel {
               spacing: Style.spacing.sm
 
               ButtonGroup {
-                value: ["12", "24", "48"].indexOf(countField.text) >= 0 ? countField.text : ""
-                options: ["12", "24", "48"]
+                value: ["16", "32", "48"].indexOf(countField.text) >= 0 ? countField.text : ""
+                options: ["16", "32", "48"]
                 foreground: root.foreground
                 onChanged: function(value) { root.setPreset(value) }
               }

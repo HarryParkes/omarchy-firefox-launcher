@@ -58,7 +58,7 @@ No Omarchy core file or Hyprland configuration file is changed.
 Select the Firefox glyph in the Omarchy bar. The panel provides:
 
 - persisted target URL;
-- 12, 24, and 48 presets, with 48 as the default;
+- 16, 32, and 48 presets, with 48 as the default;
 - a custom count from 1 to 999;
 - equal grids with up to 16 sessions per workspace;
 - Launch Sessions and Launch Missing;

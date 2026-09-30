@@ -280,6 +280,7 @@ class ManagerTest(unittest.TestCase):
         self.assertIn(f"OnCalendar={at.strftime('%Y-%m-%d %H:%M:%S')}", timer.read_text())
         self.assertIn("Persistent=true", timer.read_text())
         self.assertIn(f"_scheduled {created['id']}", service.read_text())
+        self.assertIn("KillMode=process", service.read_text())
 
         self.run_cli("schedule", "cancel", created["id"])
 
@@ -316,7 +317,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(list(unit_root.glob("firefox-sessions-*")), [])
 
     def test_executed_schedule_runs_once_and_removes_itself(self):
-        self.install_fake_systemctl()
+        calls = self.install_fake_systemctl()
         self.run_cli("configure", "--count", "1")
         _, created = self.add_schedule("launch")
 
@@ -327,6 +328,7 @@ class ManagerTest(unittest.TestCase):
         unit_root = self.home / ".config" / "systemd" / "user"
         self.assertFalse((unit_root / f"{created['unit']}.timer").exists())
         self.assertFalse((unit_root / f"{created['unit']}.service").exists())
+        self.assertIn(f"--user disable --now {created['unit']}.timer", calls.read_text())
 
 
 if __name__ == "__main__":
